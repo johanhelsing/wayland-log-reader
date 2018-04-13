@@ -1,7 +1,7 @@
 .pragma library;/**
  * @license
  * Lodash (Custom Build) <https://lodash.com/>
- * Build: `lodash include="reduce" iife="var _ = (function(){%output%; return runInContext(); })(this)" -o lodash.js`
+ * Build: `lodash include="reduce,forEach" iife="var _ = (function(){%output%; return runInContext(); })(this)" -o lodash.js`
  * Copyright JS Foundation and other contributors <https://js.foundation/>
  * Released under MIT license <https://lodash.com/license>
  * Based on Underscore.js 1.8.3 <http://underscorejs.org/LICENSE>
@@ -2764,6 +2764,41 @@ var _ = (function(){
   /*------------------------------------------------------------------------*/
 
   /**
+   * Iterates over elements of `collection` and invokes `iteratee` for each element.
+   * The iteratee is invoked with three arguments: (value, index|key, collection).
+   * Iteratee functions may exit iteration early by explicitly returning `false`.
+   *
+   * **Note:** As with other "Collections" methods, objects with a "length"
+   * property are iterated like arrays. To avoid this behavior use `_.forIn`
+   * or `_.forOwn` for object iteration.
+   *
+   * @static
+   * @memberOf _
+   * @since 0.1.0
+   * @alias each
+   * @category Collection
+   * @param {Array|Object} collection The collection to iterate over.
+   * @param {Function} [iteratee=_.identity] The function invoked per iteration.
+   * @returns {Array|Object} Returns `collection`.
+   * @see _.forEachRight
+   * @example
+   *
+   * _.forEach([1, 2], function(value) {
+   *   console.log(value);
+   * });
+   * // => Logs `1` then `2`.
+   *
+   * _.forEach({ 'a': 1, 'b': 2 }, function(value, key) {
+   *   console.log(key);
+   * });
+   * // => Logs 'a' then 'b' (iteration order is not guaranteed).
+   */
+  function forEach(collection, iteratee) {
+    var func = isArray(collection) ? arrayEach : baseEach;
+    return func(collection, getIteratee(iteratee, 3));
+  }
+
+  /**
    * Reduces `collection` to a value which is the accumulated result of running
    * each element in `collection` thru `iteratee`, where each successive
    * invocation is supplied the return value of the previous. If `accumulator`
@@ -3497,6 +3532,7 @@ var _ = (function(){
 
   // Add methods that return unwrapped values in chain sequences.
   lodash.eq = eq;
+  lodash.forEach = forEach;
   lodash.get = get;
   lodash.hasIn = hasIn;
   lodash.identity = identity;
@@ -3516,6 +3552,9 @@ var _ = (function(){
   lodash.stubFalse = stubFalse;
   lodash.reduce = reduce;
   lodash.toString = toString;
+
+  // Add aliases.
+  lodash.each = forEach;
 
   /*------------------------------------------------------------------------*/
 

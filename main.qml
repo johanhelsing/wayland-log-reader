@@ -9,6 +9,7 @@ ApplicationWindow {
     title: "wayland-log-reader"
     width: 1024
     height: 1024
+    background: Rectangle { color: "white" }
     property string log: '~/d/q/b/1/q/t/a/g/k/qopenglwindow env WAYLAND_DEBUG=1 env EGL_LOG_LEVEL=debug WAYLAND_DISPLAY=wayland-3 LIBGL_ALWAYS_SOFTWARE=1 ./tst_qopenglwindow readPixels
 [2996031.536]  -> wl_display@1.get_registry(new id wl_registry@2)
 [2996031.612]  -> wl_display@1.sync(new id wl_callback@3)
@@ -183,9 +184,17 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         id: objectsView
         anchors.top: parent.top
         anchors.bottom: parent.bottom
+        anchors.right: parent.right
         width: parent.width / 2
         Column {
             width: objectsView.width
+            Repeater {
+                model: objects
+                Label {
+                    text: interfaceName + "@" + id
+                    color: colorHash(uniqueId)
+                }
+            }
         }
     }
 
@@ -221,11 +230,17 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
                     Repeater {
                         model: type === "event"
                         Row {
+                            anchors.right: parent.right
                             height: 25
                             spacing: 5
-                            Label { text: "" }
-                            Label { text: parts.object.interface + "@" + parts.object.id; color: "gray" }
+                            ObjectLabel { object: parts.object }
                             Label { text: parts.fn }
+                            Label { text: "(" }
+                            Repeater {
+                                model: parts.args
+                                ArgumentItem { arg: parts.args[index] }
+                            }
+                            Label { text: ")" }
                         }
                     }
                     Repeater {
@@ -234,8 +249,14 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
                             height: 25
                             spacing: 5
                             Label { text: " -> " }
-                            Label { text: parts.object.interface + "@" + parts.object.id; color: "gray" }
+                            ObjectLabel { object: parts.object }
                             Label { text: parts.fn }
+                            Label { text: "(" }
+                            Repeater {
+                                model: parts.args
+                                ArgumentItem { arg: parts.args[index] }
+                            }
+                            Label { text: ")" }
                         }
                     }
                 }
@@ -243,15 +264,34 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         }
     }
 
+    property var state: ({})
     ListModel { id: parsedLines }
     ListModel { id: objects }
     property var re: ({
         logLine: /^\[\d{7}\.\d{3}\] (.*)$/,
         sentMessage: /^ -> (.*)$/,
-        message: /^(\w+@\d+)\.(\w+\((.*)\))$/,
+        message: /^(\w+@\d+)\.(\w+)\((.*)\)$/,
         arguments: /^$/,
-        newId: /^new id (\w+@\d+)$/
+        newId: /^new id ((\w+|\[\unknown\])@\d+)$/,
+        object: /^(\w+|\[unknown\])@(\d+)$/
     })
+
+    function hash(str) {
+        var hash = 0;
+        if (this.length === 0)
+            return hash;
+        for (var i = 0; i < str.length; ++i) {
+            const chr = str.charCodeAt(i);
+            hash = ((hash << 5) - hash) + chr;
+            hash |= 0; // Convert to 32bit integer
+        }
+        return hash;
+    }
+
+    function colorHash(value) {
+        const hue = 0.5 + hash(Qt.md5(value)) / Math.pow(2, 32);
+        return Qt.hsla(hue, 1, 0.4, 1);
+    }
 
     function parseNewId(arg) {
         const parts = arg.match(re.newId);
@@ -264,13 +304,15 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
     function parseArgs(args) {
         // let's do it the shitty way and just split on comma
         return args.split(', ').map(function(arg) {
-            return parseNewId(arg) || { type: "unknown", rawText: arg };
+            return parseNewId(arg) || parseObject(arg) || { type: "unknown", rawText: arg };
         });
     }
 
     function parseObject(object) {
-        const parts = object.split("@");
-        return { interface: parts[0], id: parts[1], rawText: object };
+        const parts = object.match(re.object);
+        if (!parts)
+            return;
+        return { type: "object", interfaceName: parts[1], id: parts[2], rawText: object };
     }
 
     function parseMessage(message) {
@@ -293,7 +335,7 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         return { type: type, parts: parsedMessage, rawText: line };
     }
 
-    property int nextId: 0
+    property int nextId: 1
     function getUniqueId() {
         return nextId++;
     }
@@ -301,14 +343,14 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
     function updateUniqueId(object, liveObjects) {
         const objectInfo = liveObjects[object.id];
         if (!objectInfo) {
-            console.warn("couldn't find live id", object.id);
+//            console.warn("couldn't find live id", object.id);
             return;
         }
         object.uniqueId = objectInfo.uniqueId;
     }
 
     function updateLiveObjects(line, state) {
-        if (line.type !== "event" || line.type !== "request")
+        if (line.type !== "event" && line.type !== "request")
             return;
 
         line.parts.args.forEach(function(arg) {
@@ -317,7 +359,7 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
                 if (state.liveObjectsById[id])
                     console.warn(id, "is already in db, something is wrong, continuing anyway");
                 const uniqueId = getUniqueId();
-                const object = { interface: arg.object.interface, id: arg.object.id, uniqueId: uniqueId };
+                const object = { interfaceName: arg.object.interfaceName, id: arg.object.id, uniqueId: uniqueId };
                 state.objects[uniqueId] = object;
                 state.liveObjectsById[id] = object;
             }
@@ -326,19 +368,38 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
 
     function parseLog(log) {
         const  lines = log.split('\n');
-        const state = Lodash._.reduce(lines, function(state, line, lineNumber) {
+        state = Lodash._.reduce(lines, function(state, line, lineNumber) {
             const parsedLine = parseLine(line);
             state.parsedLines.push(parsedLine);
 
-            if (parsedLine.type === "event" || parsedLine.type === "request") {
+            //easier access
+            const type = parsedLine.type;
+            const parts = parsedLine.parts;
+            const object = parts && parts.object;
+            const fn = parts && parts.fn;
+            const args = parts && parts.args;
+
+            if (type === "event" && object.interfaceName === "wl_registry" && fn === "global") {
+                console.log("updating globals", JSON.stringify(args));
+                //TODO
+            }
+
+            if (type === "event" || type === "request") {
                 updateLiveObjects(parsedLine, state);
 
-                updateUniqueId(parsedLine.parts.object, state.liveObjectsById);
+                updateUniqueId(object, state.liveObjectsById);
+                args.forEach(function(arg) {
+                    if (arg.type === "object")
+                        updateUniqueId(arg, state.liveObjectsById);
+                    else if (arg.type === "new")
+                        updateUniqueId(arg.object, state.liveObjectsById);
+                });
+
                 //TODO: set unique ids for arguments also
             }
 
             return state;
-        }, {parsedLines: [], objects: {}, liveObjectsById: {}});
+        }, {parsedLines: [], objects: {}, liveObjectsById: {}, globals: {}});
 
         // add the lines to a model Qt understands
         state.parsedLines.forEach(function(line) {
@@ -346,8 +407,8 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         });
 
         // and the objets
-        state.objects.forEach(function(object) {
-            parsedLines.append(object);
+        Lodash._.forEach(state.objects, function(object) {
+            objects.append(object);
         });
     }
     Component.onCompleted: parseLog(log)

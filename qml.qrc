@@ -3,5 +3,7 @@
         <file>main.qml</file>
         <file>lodash.js</file>
         <file>qtquickcontrols2.conf</file>
+        <file>ObjectLabel.qml</file>
+        <file>ArgumentItem.qml</file>
     </qresource>
 </RCC>
