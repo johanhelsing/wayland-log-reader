@@ -53,6 +53,7 @@ ApplicationWindow {
             CheckBox {
                 id: showComments
                 text: "Show comments"
+                checked: true
             }
 
             Repeater  {
