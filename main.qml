@@ -10,6 +10,7 @@ ApplicationWindow {
     width: 1024
     height: 1024
     background: Rectangle { color: "white" }
+    property int highlightObject: 0
     property string log: '~/d/q/b/1/q/t/a/g/k/qopenglwindow env WAYLAND_DEBUG=1 env EGL_LOG_LEVEL=debug WAYLAND_DISPLAY=wayland-3 LIBGL_ALWAYS_SOFTWARE=1 ./tst_qopenglwindow readPixels
 [2996031.536]  -> wl_display@1.get_registry(new id wl_registry@2)
 [2996031.612]  -> wl_display@1.sync(new id wl_callback@3)
@@ -180,6 +181,11 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
 //        text: window.log
 //    }
 
+    function handleObjectSelected(object) {
+        console.log("selected", object.uniqueId)
+        highlightObject = object.uniqueId;
+    }
+
     ScrollView {
         id: objectsView
         anchors.top: parent.top
@@ -187,13 +193,18 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         anchors.right: parent.right
         width: parent.width / 2
         Column {
+            spacing: 3
             width: objectsView.width
+            Label { text: "All objects"; font.weight: Font.Bold; font.pixelSize: 16 }
             Repeater {
                 model: objects
-                Label {
-                    text: interfaceName + "@" + id
-                    color: colorHash(uniqueId)
-                }
+                ObjectLabel { object: objects.get(index); onClicked: handleObjectSelected(object) }
+            }
+            Item { height: 5; width: 1 }
+            Label { text: "Globals"; font.weight: Font.Bold; font.pixelSize: 16 }
+            Repeater {
+                model: globals
+                Label { text: number + ": " + interfaceName + " v" + version }
             }
         }
     }
@@ -230,15 +241,15 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
                     Repeater {
                         model: type === "event"
                         Row {
-                            anchors.right: parent.right
+//                            anchors.right: parent.right
                             height: 25
                             spacing: 5
-                            ObjectLabel { object: parts.object }
+                            ObjectLabel { object: parts.object; onClicked: handleObjectSelected(object) }
                             Label { text: parts.fn }
                             Label { text: "(" }
                             Repeater {
                                 model: parts.args
-                                ArgumentItem { arg: parts.args[index] }
+                                ArgumentItem { arg: parts.args[index]; onObjectSelected: handleObjectSelected(object) }
                             }
                             Label { text: ")" }
                         }
@@ -249,12 +260,12 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
                             height: 25
                             spacing: 5
                             Label { text: " -> " }
-                            ObjectLabel { object: parts.object }
+                            ObjectLabel { object: parts.object; onClicked: window.highlightObject = object.uniqueId }
                             Label { text: parts.fn }
                             Label { text: "(" }
                             Repeater {
                                 model: parts.args
-                                ArgumentItem { arg: parts.args[index] }
+                                ArgumentItem { arg: parts.args[index]; onObjectSelected: handleObjectSelected(object) }
                             }
                             Label { text: ")" }
                         }
@@ -267,6 +278,7 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
     property var state: ({})
     ListModel { id: parsedLines }
     ListModel { id: objects }
+    ListModel { id: globals }
     property var re: ({
         logLine: /^\[\d{7}\.\d{3}\] (.*)$/,
         sentMessage: /^ -> (.*)$/,
@@ -301,10 +313,30 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         return { type: "new", object: object, rawText: arg };
     }
 
+    function parseInteger(arg) {
+        const value = parseInt(arg);
+        if (isNaN(value))
+            return;
+        return { type: "integer", value: value, rawText: arg };
+    }
+
+    function parseString(arg) {
+        try {
+            const value = JSON.parse(arg);
+            if (typeof value === "string")
+                return { type: "string", value: value, rawText: arg };
+        } catch (e) {}
+        return;
+    }
+
     function parseArgs(args) {
         // let's do it the shitty way and just split on comma
         return args.split(', ').map(function(arg) {
-            return parseNewId(arg) || parseObject(arg) || { type: "unknown", rawText: arg };
+            return parseNewId(arg) ||
+                    parseObject(arg) ||
+                    parseInteger(arg) ||
+                    parseString(arg) ||
+                    { type: "unknown", rawText: arg };
         });
     }
 
@@ -312,7 +344,7 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         const parts = object.match(re.object);
         if (!parts)
             return;
-        return { type: "object", interfaceName: parts[1], id: parts[2], rawText: object };
+        return { type: "object", interfaceName: parts[1], id: parseInt(parts[2]), rawText: object };
     }
 
     function parseMessage(message) {
@@ -367,7 +399,13 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
     }
 
     function parseLog(log) {
-        const  lines = log.split('\n');
+        const lines = log.split('\n');
+
+        const initialState = { parsedLines: [], objects: {}, liveObjectsById: {}, globals: {} };
+        const displayObject = { interfaceName: "wl_display", id: 1, uniqueId: getUniqueId() } ;
+        initialState.objects[displayObject.uniqueId] = displayObject;
+        initialState.liveObjectsById[displayObject.id] = displayObject;
+
         state = Lodash._.reduce(lines, function(state, line, lineNumber) {
             const parsedLine = parseLine(line);
             state.parsedLines.push(parsedLine);
@@ -379,9 +417,13 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
             const fn = parts && parts.fn;
             const args = parts && parts.args;
 
-            if (type === "event" && object.interfaceName === "wl_registry" && fn === "global") {
-                console.log("updating globals", JSON.stringify(args));
-                //TODO
+            if (type === "event" && object.interfaceName === "wl_registry" && fn === "global")
+                state.globals[args[0].value] = { number: args[0].value, interfaceName: args[1].value, version: args[2].value};
+
+            if (type === "request" && object.interfaceName === "wl_registry" && fn === "bind") {
+                const global = state.globals[args[0].value];
+                parsedLine.global = global;
+                args[3].object.interfaceName = global.interfaceName;
             }
 
             if (type === "event" || type === "request") {
@@ -399,7 +441,7 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
             }
 
             return state;
-        }, {parsedLines: [], objects: {}, liveObjectsById: {}, globals: {}});
+        }, initialState);
 
         // add the lines to a model Qt understands
         state.parsedLines.forEach(function(line) {
@@ -409,6 +451,11 @@ Totals: 2 passed, 2 failed, 0 skipped, 0 blacklisted, 15259ms
         // and the objets
         Lodash._.forEach(state.objects, function(object) {
             objects.append(object);
+        });
+
+        // and the globals
+        Lodash._.forEach(state.globals, function(global) {
+            globals.append(global);
         });
     }
     Component.onCompleted: parseLog(log)
