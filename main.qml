@@ -92,7 +92,7 @@ ApplicationWindow {
                         Row {
                             height: 25
                             spacing: 5
-                            Label { text: " -> " }
+                            Label { text: " → " }
                             ObjectLabel { object: parts.object; onClicked: window.highlightObject = object.uniqueId }
                             Label { text: parts.fn }
                             Label { text: "(" }
