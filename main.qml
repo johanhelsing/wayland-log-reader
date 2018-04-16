@@ -160,9 +160,34 @@ ApplicationWindow {
         return;
     }
 
+    function splitArgs(text) {
+        var startPos = 0;
+        var inString = false;
+        const args = [];
+        for (var i = 0;; ++i) {
+            const ch = text[i];
+            if (!ch) {
+                if (i > startPos)
+                    args.push(text.slice(startPos, i));
+                break;
+            }
+
+            if (!inString && ch === ",") {
+                args.push(text.slice(startPos, i));
+                startPos = i + 2;
+                ++i; //skip space inbetween
+            }
+
+            if (i === startPos)
+                inString = ch === "\"";
+            else if (inString && ch === "\"" && text[i-1] !== "\\")
+                inString = false;
+        }
+        return args;
+    }
+
     function parseArgs(args) {
-        // let's do it the shitty way and just split on comma
-        return args.split(', ').map(function(arg) {
+        return splitArgs(args).map(function(arg) {
             return parseNewId(arg) ||
                     parseObject(arg) ||
                     parseInteger(arg) ||
