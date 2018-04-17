@@ -28,6 +28,6 @@ Project {
             qbs.installDir: "bin"
         }
 
-        qbs.installPrefix: "usr/local"
+        qbs.installPrefix: "usr"
     }
 }
