@@ -129,6 +129,42 @@ function updateLiveObjects(line, state) {
     });
 }
 
+//TODO: currently state will be modified... could perhaps copy it first to have a cleaner API
+function processLogLine(state, line) {
+    const parsedLine = parseLine(line);
+    state.parsedLines.push(parsedLine);
+
+    //easier access
+    const type = parsedLine.type;
+    const parts = parsedLine.parts;
+    const object = parts && parts.object;
+    const fn = parts && parts.fn;
+    const args = parts && parts.args;
+
+    if (type === "event" && object.interfaceName === "wl_registry" && fn === "global")
+        state.globals[args[0].value] = { number: args[0].value, interfaceName: args[1].value, version: args[2].value};
+
+    if (type === "request" && object.interfaceName === "wl_registry" && fn === "bind") {
+        const global = state.globals[args[0].value];
+        parsedLine.global = global;
+        args[3].object.interfaceName = global.interfaceName;
+    }
+
+    if (type === "event" || type === "request") {
+        updateLiveObjects(parsedLine, state);
+
+        updateUniqueId(object, state.liveObjectsById);
+        args.forEach(function(arg) {
+            if (arg.type === "object")
+                updateUniqueId(arg, state.liveObjectsById);
+            else if (arg.type === "new")
+                updateUniqueId(arg.object, state.liveObjectsById);
+        });
+    }
+
+    return state;
+}
+
 function parseLog(log) {
     const lines = log.split('\n');
 
@@ -137,40 +173,7 @@ function parseLog(log) {
     state.objects[displayObject.uniqueId] = displayObject;
     state.liveObjectsById[displayObject.id] = displayObject;
 
-    state = Lodash._.reduce(lines, function(state, line, lineNumber) {
-        const parsedLine = parseLine(line);
-        state.parsedLines.push(parsedLine);
-
-        //easier access
-        const type = parsedLine.type;
-        const parts = parsedLine.parts;
-        const object = parts && parts.object;
-        const fn = parts && parts.fn;
-        const args = parts && parts.args;
-
-        if (type === "event" && object.interfaceName === "wl_registry" && fn === "global")
-            state.globals[args[0].value] = { number: args[0].value, interfaceName: args[1].value, version: args[2].value};
-
-        if (type === "request" && object.interfaceName === "wl_registry" && fn === "bind") {
-            const global = state.globals[args[0].value];
-            parsedLine.global = global;
-            args[3].object.interfaceName = global.interfaceName;
-        }
-
-        if (type === "event" || type === "request") {
-            updateLiveObjects(parsedLine, state);
-
-            updateUniqueId(object, state.liveObjectsById);
-            args.forEach(function(arg) {
-                if (arg.type === "object")
-                    updateUniqueId(arg, state.liveObjectsById);
-                else if (arg.type === "new")
-                    updateUniqueId(arg.object, state.liveObjectsById);
-            });
-        }
-
-        return state;
-    }, state);
+    state = Lodash._.reduce(lines, processLogLine, state);
 
     return state;
 }
