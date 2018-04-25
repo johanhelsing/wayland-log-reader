@@ -165,15 +165,15 @@ function processLogLine(state, line) {
     return state;
 }
 
-function parseLog(log) {
-    const lines = log.split('\n');
-
+function createInitialState() {
     const state = { parsedLines: [], objects: {}, liveObjectsById: {}, globals: {} };
     const displayObject = { interfaceName: "wl_display", id: 1, uniqueId: getUniqueId() } ;
     state.objects[displayObject.uniqueId] = displayObject;
     state.liveObjectsById[displayObject.id] = displayObject;
-
-    state = Lodash._.reduce(lines, processLogLine, state);
-
     return state;
+}
+
+function parseLog(log) {
+    const lines = log.split('\n');
+    return Lodash._.reduce(lines, processLogLine, createInitialState());
 }
