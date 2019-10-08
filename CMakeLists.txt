@@ -21,3 +21,5 @@ target_link_libraries(wayland-log-reader
     Qt5::Widgets
     Qt5::Quick
 )
+
+install(TARGETS wayland-log-reader DESTINATION bin)
